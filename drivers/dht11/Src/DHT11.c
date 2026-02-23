@@ -4,7 +4,6 @@
  * @author xiaoyvxie (xiaoyvxie@gmail.com)
  * @version V1.0
  * @date 2026-02-23
- * @copyright Copyright (c) 2026 xiaoyvxie. All rights reserved.
  * @details 实现了DHT11温湿度传感器的初始化、数据读取等功能。
  */
 
