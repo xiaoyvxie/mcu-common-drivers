@@ -1,9 +1,9 @@
 /**
  * @file DHT11.h
  * @brief DHT11温湿度传感器驱动头文件
- * @author xiaoyvxie (xiaoyvxie@gmail.com)
- * @version V1.0
- * @date 2026-02-23
+ * @author xiaoyvxie ("xiaoyvxie@gmail.com" or "xiaoyvxie@yeah.net")
+ * @version V1.1
+ * @date 2026-02-25
  * @details 提供了DHT11温湿度传感器的初始化、数据读取等功能的函数和宏定义。
  */
 #ifndef __DHT11_H__
@@ -70,8 +70,8 @@ void DHT11_Init();
 void DHT11_StartSignal();                                                               
 uint8_t DHT11_WaitResponse();                                                            
 uint8_t DHT11_ReadBit();                                                                     
-uint8_t DHT11_ReadByte();                                                                    
-uint8_t DHT11_ReadData(uint8_t *temperature_int, uint8_t *temperature_dec, uint8_t *humidity_int, uint8_t *humidity_dec);
+uint8_t DHT11_ReadByte();                                                              
+uint8_t DHT11_ReadData(uint8_t *temperature_sign,  uint8_t *temperature_int, uint8_t *temperature_dec, uint8_t *humidity_int);
 
 // ------------------------------------------------------------------<
 

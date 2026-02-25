@@ -2,13 +2,14 @@
 
 ## 1. 库概述
 
-DHT11 温湿度传感器库是一个专为 51 单片机设计的驱动库，用于与 DHT11 数字温湿度传感器进行通信。该库提供了简洁的 API 接口，支持温湿度数据的读取和处理。
+DHT11 温湿度传感器库是一个专为单片机设计的驱动库，用于与 DHT11 数字温湿度传感器进行通信。该库提供了简洁的 API 接口，支持温湿度数据的读取和处理，包括温度符号的处理。
 
 ### 1.1 功能特点
 
 - 支持 DHT11 传感器的初始化和数据读取
 - 提供完整的通信协议实现
 - 内置校验和验证，确保数据准确性
+- 支持温度符号处理（正负温度）
 - 模块化设计，易于移植到不同硬件平台
 - 详细的中文注释，便于理解和使用
 
@@ -74,7 +75,7 @@ void Init() {
     // 配置 UART 参数：8 位可变波特率模式，波特率 9600
     UART_CONFIG uart_config = {
         UART_MODE_8BIT_VARIABLE_BAUD,
-        0xF3// 波特率9600  
+        0xF3// 波特率9600  
     };
     
     UART_Init(&uart_config);         ///< 初始化 UART 模块
@@ -83,7 +84,6 @@ void Init() {
     interrupt_global_enable(__ON);   ///< 全局启用中断
     DHT11_Init();                    ///< 初始化 DHT11 温湿度传感器
 }
-
 
 
 /**
@@ -96,32 +96,50 @@ void Init() {
  *          2. 初始化系统
  *          3. 进入主循环，不断读取温湿度数据并通过串口发送
  *          4. 读取成功时发送温湿度数据
- *          5. 读取失败时发送错误码
- *          6. 每秒钟读取一次数据
+ *          5. 读取失败时发送错误信息
+ *          6. 每2秒钟读取一次数据
  */
 void main() {
     uint8_t temperature_int;    ///< 温度整数部分
     uint8_t temperature_dec;    ///< 温度小数部分
+    uint8_t temperature_sign;   ///< 温度符号（0为正，1为负）
     uint8_t humidity_int;       ///< 湿度整数部分
-    uint8_t humidity_dec;       ///< 湿度小数部分
     
     Init();                     ///< 初始化系统
     
     while(1) {
         // 读取 DHT11 温湿度数据
-        if (DHT11_ReadData(&temperature_int, &temperature_dec, &humidity_int, &humidity_dec) == DHT11_OK) {
-            // 读取成功，发送温湿度数据（湿度小数、湿度整数、温度小数、温度整数）
-            uart_send_byte(humidity_dec);
-            uart_send_byte(humidity_int);
-            uart_send_byte(temperature_dec);
-            uart_send_byte(temperature_int);
+        if (DHT11_ReadData(&temperature_sign, &temperature_int, &temperature_dec, &humidity_int) == DHT11_OK) {
+            // 读取成功，发送温湿度数据
+            // 发送格式: Humidity: XX% Temperature: ±XX.XC
+            // 发送湿度数据
+            uart_send_string("Humidity: ");
+            uart_send_byte('0' + humidity_int / 10);    // 发送湿度十位
+            uart_send_byte('0' + humidity_int % 10);    // 发送湿度个位
+            uart_send_byte('%');                        // 发送百分号
+            uart_send_byte(' ');                        // 发送空格
+            
+            // 发送温度数据
+            uart_send_string("Temperature: ");
+            if(temperature_sign) {
+                uart_send_byte('-');                    // 发送负号
+            }
+            else {
+                uart_send_byte('+');                    // 发送正号
+            }
+            uart_send_byte('0' + temperature_int / 10);  // 发送温度十位
+            uart_send_byte('0' + temperature_int % 10);  // 发送温度个位
+            uart_send_byte('.');                        // 发送小数点
+            uart_send_byte('0' + temperature_dec);       // 发送温度小数位
+            uart_send_byte('C');                         // 发送温度单位
+            uart_send_byte('\n');                        // 发送换行符
         } 
         else {
-            // 读取失败，发送错误码 0xFF
-            uart_send_byte(0xFF);
-            Delay_ms(1);        ///< 短暂延时
+            // 读取失败，发送错误信息
+            uart_send_string("Error reading DHT11 data!\n");
         }
-        Delay_ms(1000);         ///< 延时 1 秒，控制采样频率
+        
+        Delay_ms(2000);         ///< 延时 2 秒，控制采样频率
     }
 }
 ```
@@ -138,17 +156,17 @@ void main() {
 
 ### 3.2 数据读取函数
 
-#### `uint8_t DHT11_ReadData(uint8_t *temperature_int, uint8_t *temperature_dec, uint8_t *humidity_int, uint8_t *humidity_dec)`
+#### `uint8_t DHT11_ReadData(uint8_t *temperature_sign, uint8_t *temperature_int, uint8_t *temperature_dec, uint8_t *humidity_int)`
 - **功能**：读取 DHT11 传感器的温湿度数据
 - **参数**：
+  - `temperature_sign`：温度符号的指针（0为正，1为负）
   - `temperature_int`：温度整数部分的指针
   - `temperature_dec`：温度小数部分的指针
   - `humidity_int`：湿度整数部分的指针
-  - `humidity_dec`：湿度小数部分的指针
 - **返回值**：
   - `DHT11_OK`：读取成功
   - `DHT11_ERROR`：读取失败
-- **说明**：该函数会发送启动信号，等待响应，然后读取 5 个字节的数据（湿度小数、湿度整数、温度小数、温度整数、校验和），最后验证校验和的正确性
+- **说明**：该函数会发送启动信号，等待响应，然后读取 5 个字节的数据（湿度整数、湿度小数、温度整数、温度小数和符号、校验和），最后验证校验和的正确性并处理温度符号
 
 ### 3.3 内部函数
 
@@ -201,17 +219,39 @@ void main() {
 
 #### 4.1.2 GPIO 初始化函数
 
-需要实现 `DHT11_Gpio_Write_Init()` 和 `DHT11_Gpio_Read_Init()` 函数，根据目标平台的 GPIO 配置方式
+需要实现 `DHT11_Gpio_Write_Init()` 和 `DHT11_Gpio_Read_Init()` 函数，根据目标平台的 GPIO 配置方式：
+
+```c
+/**
+ * @brief 初始化DHT11 GPIO为输出模式
+ * @param 无
+ * @return 无
+ * @note 配置DHT11传感器的GPIO引脚为输出模式
+ */
+void DHT11_Gpio_Write_Init() {
+    // 根据目标平台实现GPIO输出模式配置
+}
+
+/**
+ * @brief 初始化DHT11 GPIO为输入模式
+ * @param 无
+ * @return 无
+ * @note 配置DHT11传感器的GPIO引脚为输入模式
+ */
+void DHT11_Gpio_Read_Init() {
+    // 根据目标平台实现GPIO输入模式配置
+}
+```
 
 #### 4.1.3 延时函数
 
 在 `DHT11.h` 文件中，需要修改以下宏定义，确保延时函数与目标平台匹配：
 
 ```c
-#define DHT11_DELAY_1S()            Delay_ms(1000)      // 延时 1 秒
-#define DHT11_DELAY_20MS()          Delay_ms(20)        // 延时 20 毫秒
-#define DHT11_DELAY_20US()          Delay_20us()        // 延时 20 微秒
-#define DHT11_DELAY_10US()          Delay_10us()        // 延时 10 微秒
+#define DHT11_DELAY_1S()            Delay_ms(1000)      ///< 延时1秒
+#define DHT11_DELAY_20MS()          Delay_ms(20)        ///< 延时20毫秒
+#define DHT11_DELAY_20US()          Delay_20us()        ///< 延时20微秒
+#define DHT11_DELAY_10US()          Delay_10us()        ///< 延时10微秒
 ```
 
 如果目标平台没有这些延时函数，需要自行实现
@@ -237,7 +277,7 @@ void main() {
    }
    ```
 
-3. 实现延时函数（如果需要）：
+3. 实现延时函数（根据硬件平台资源替换）：
    ```c
    void Delay_ms(uint16_t ms) {
        uint16_t i, j;
@@ -256,8 +296,6 @@ void main() {
        for (i = 0; i < 4; i++);
    }
    ```
-
-
 
 ## 5. 常见问题与解决方案
 
@@ -307,17 +345,19 @@ void main() {
 
 ## 6. 注意事项
 
-1. **采样频率**：DHT11 传感器的采样频率不应超过 2Hz（即每2秒读取一次）
-2. **电源稳定性**：确保传感器供电稳定，避免电压波动
-3. **连接线长度**：DATA 信号线长度不宜过长，建议不超过 2 米
-4. **抗干扰**：在嘈杂环境中，建议在 DATA 线上添加上拉电阻（4.7KΩ）和滤波电容
-5. **温度范围**：DHT11 传感器的工作温度范围为 0-50℃，湿度范围为 20-90%RH
+1. **采样频率**：DHT11 传感器的采样频率建议 0.5Hz（即每2秒读取一次）
+2. **实时数据**：DHT11 每次读出的温湿度数值是上一次测量的结果,欲获取实时数据,需连续读取2次，连续读取间隔最好隔20ms，不建议连续多次读取传感器
+3. **电源稳定性**：确保传感器供电稳定，避免电压波动
+4. **连接线长度**：DATA 信号线长度不宜过长，建议不超过 2 米
+5. **抗干扰**：在嘈杂环境中，建议在 DATA 线上添加上拉电阻（4.7KΩ）和滤波电容
+6. **温度范围**：DHT11 传感器的工作温度范围为 -20-60℃，湿度范围为 5-95%RH
 
 ## 7. 版本历史
 
 | 版本 | 日期 | 变更内容 |
 |------|------|----------|
 | V1.0 | 2026-02-23 | 初始版本，实现基本功能 |
+| V1.1 | 2026-02-25 | 增加温度符号处理功能，修正数据读取逻辑 |
 
 ## 8. 许可证
 
@@ -332,4 +372,3 @@ void main() {
 ---
 
 **备注**：本使用说明基于 DHT11 传感器的官方 datasheet 和实际测试编写，如有任何疑问或建议，欢迎联系作者。
-        

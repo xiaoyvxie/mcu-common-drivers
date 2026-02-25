@@ -1,9 +1,9 @@
 /**
  * @file DHT11.c
  * @brief DHT11温湿度传感器驱动源文件
- * @author xiaoyvxie (xiaoyvxie@gmail.com)
- * @version V1.0
- * @date 2026-02-23
+ * @author xiaoyvxie ("xiaoyvxie@gmail.com" or "xiaoyvxie@yeah.net")
+ * @version V1.1
+ * @date 2026-02-25
  * @details 实现了DHT11温湿度传感器的初始化、数据读取等功能。
  */
 
@@ -157,25 +157,25 @@ uint8_t DHT11_ReadBit() {
  * @details 连续读取8个数据位，组成一个完整的字节
  */
 uint8_t DHT11_ReadByte() {
-    int8_t bit_index;
+    uint8_t bit_index;
     uint8_t DHT11_data = 0;
-    
-    for (bit_index = 7; bit_index >= 0; bit_index--) {
+    for ( bit_index = 0; bit_index < 8; bit_index++) {
+        DHT11_data <<= 1; // 左移一位，为下一位数据做准备
         if (DHT11_ReadBit() == DHT11_GPIO_PIN_SET) {
-            DHT11_data |= (1 << bit_index);
+            DHT11_data |= 0x01;
         }
+        
     }
-    
     return DHT11_data;
 }
 
 
 /**
  * @brief 读取DHT11温湿度数据
+ * @param[out] temperature_sign 温度符号（0为正，1为负）
  * @param[out] temperature_int 温度整数部分
  * @param[out] temperature_dec 温度小数部分
  * @param[out] humidity_int 湿度整数部分
- * @param[out] humidity_dec 湿度小数部分
  * @return uint8_t - 操作结果
  * @retval DHT11_OK - 读取成功
  * @retval DHT11_ERROR - 读取失败
@@ -183,14 +183,17 @@ uint8_t DHT11_ReadByte() {
  * @details 执行以下操作:
  *          1. 发送启动信号
  *          2. 等待响应信号
- *          3. 读取湿度小数部分
- *          4. 读取湿度整数部分
- *          5. 读取温度小数部分
- *          6. 读取温度整数部分
+ *          3. 读取湿度整数部分
+ *          4. 读取湿度小数部分（内部处理，不输出）
+ *          5. 读取温度整数部分
+ *          6. 读取温度小数部分和符号
  *          7. 读取校验和并验证
+ *          8. 处理温度符号和小数部分
  */
-uint8_t DHT11_ReadData(uint8_t *temperature_int, uint8_t *temperature_dec, uint8_t *humidity_int, uint8_t *humidity_dec) {
-    uint8_t check;
+uint8_t DHT11_ReadData(uint8_t *temperature_sign, uint8_t *temperature_int, uint8_t *temperature_dec, uint8_t *humidity_int) {
+    uint8_t check;               ///< 校验和
+    uint8_t humidity_dec;        ///< 湿度小数部分（内部使用）
+    uint8_t temperature_dec_sign; ///< 温度小数部分和符号
     
     DHT11_StartSignal();    // 发送启动信号
     
@@ -199,16 +202,21 @@ uint8_t DHT11_ReadData(uint8_t *temperature_int, uint8_t *temperature_dec, uint8
         return DHT11_ERROR;
     }
     
-    *humidity_dec = DHT11_ReadByte();
-    *humidity_int = DHT11_ReadByte();
-    *temperature_dec = DHT11_ReadByte();
-    *temperature_int = DHT11_ReadByte();
-    check = DHT11_ReadByte();
+    *humidity_int = DHT11_ReadByte();        // 读取湿度整数部分
+    humidity_dec = DHT11_ReadByte();         // 读取湿度小数部分
+    *temperature_int = DHT11_ReadByte();     // 读取温度整数部分
+    temperature_dec_sign = DHT11_ReadByte(); // 读取温度小数部分和符号
+    check = DHT11_ReadByte();                // 读取校验和
     
     // 验证校验和
-    if (check != ((*humidity_int + *humidity_dec + *temperature_int + *temperature_dec) & 0xFF)) {
+    if (check != ((*humidity_int + humidity_dec + *temperature_int + temperature_dec_sign) & 0xFF)) {
         return DHT11_ERROR;
     }
+    
+    // 温度符号处理：如果温度小数部分的最高位为1，则表示负温度
+    *temperature_sign = (temperature_dec_sign & 0x80) ? 1 : 0;
+    // 温度小数部分处理：去掉最高位的符号位
+    *temperature_dec = temperature_dec_sign & 0x7F;
     
     return DHT11_OK;
 }
